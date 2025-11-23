@@ -1,0 +1,1 @@
+README: Dot Product Kernel Performance AnalysisThis project implements and analyzes the performance of a Dot Product Kernel ($sdot = \sum_{i=1}^{n} a_{i}b_{i}$) using two methods: C code with SIMD Intrinsics and x86-64 Assembly Language.The implementation strictly uses scalar SIMD registers and floating-point instructions in both versions.
