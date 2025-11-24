@@ -1,0 +1,50 @@
+# Visual Studio build artifacts
+.vs/
+x64/
+Debug/
+Release/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.db
+*.opendb
+*.ipch
+*.log
+*.tlog
+*.obj
+*.iobj
+*.pdb
+*.ipdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.lastbuildstate
+
+# Visual Studio cache/options
+.vs/
+.vscode/
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+
+# Temporary files
+*.tmp
+*.temp
+~$*
+
+# But keep the screenshots folder structure
+!screenshots/
+!screenshots/.gitkeep

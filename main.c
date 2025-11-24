@@ -1,81 +1,131 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include <time.h>
-#include <immintrin.h> // Required for SIMD intrinsics
+#include <windows.h>
+#include <math.h>
 
-// C Kernel using SIMD Intrinsics 
-double c_dot_simd(int n, const double *a, const double *b) {
-    // xmm0 will accumulate the dot product (sdot)
-    __m128d sdot_vec = _mm_setzero_pd(); 
-    
-    // Loop must be unrolled or vectorized for proper performance measurement
-    for (int i = 0; i < n; i++) {
-        // Load a_i into the low 64 bits of xmm1
-        __m128d a_i_vec = _mm_load_sd(&a[i]); 
-        
-        // Load b_i into the low 64 bits of xmm2
-        __m128d b_i_vec = _mm_load_sd(&b[i]); 
-        
-        // Multiply: xmm1 = a_i * b_i (Scalar Double-Precision)
-        __m128d product = _mm_mul_sd(a_i_vec, b_i_vec); 
-        
-        // Accumulate: xmm0 = xmm0 + product (Scalar Double-Precision)
-        sdot_vec = _mm_add_sd(sdot_vec, product); 
-    }
-    
-    // Extract the final scalar result from the XMM register
-    double sdot;
-    _mm_store_sd(&sdot, sdot_vec);
-    
-    return sdot;
+extern double dotproduct_asm(double* A, double* B, long long n);
+double dotproduct_c(double* A, double* B, long long n);
+
+double get_time() {
+    LARGE_INTEGER frequency, counter;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+    return (double)counter.QuadPart / (double)frequency.QuadPart;
 }
 
-// Declaration of Assembly Function (Windows x64)
-// The function name should match the label used in the assembly file: _asm_dot
-extern double _asm_dot(int n, const double *a, const double *b);
+void initialize_vectors(double* A, double* B, long long n) {
+    srand((unsigned int)time(NULL));
+    for (long long i = 0; i < n; i++) {
+        A[i] = ((double)rand() / RAND_MAX) * 10.0;
+        B[i] = ((double)rand() / RAND_MAX) * 10.0;
+    }
+}
 
+int are_equal(double a, double b) {
+    double epsilon = 1e-9;
+    return fabs(a - b) < epsilon;
+}
 
-// Main Program (:
-int main(void) {
-    // use n = 2^20, 2^24, 2^30 (or max supported) for the final analysis.
-    int n = 1000; // ex size for a quick test
-    
-    // Allocate and initialize vectors A and B
-    double *a = (double *)malloc(n * sizeof(double));
-    double *b = (double *)malloc(n * sizeof(double));
-    
-    if (!a || !b) {
-        printf("Memory allocation failed.\n");
-        return 1;
+void run_benchmark(long long n) {
+    printf("\n========================================\n");
+    printf("Vector Size: n = 2^%d = %lld elements\n", (int)log2((double)n), n);
+    printf("========================================\n");
+
+    // Allocate memory for vectors
+    double* A = (double*)malloc(n * sizeof(double));
+    double* B = (double*)malloc(n * sizeof(double));
+
+    if (A == NULL || B == NULL) {
+        printf("Memory allocation failed for n = %lld\n", n);
+        if (A) free(A);
+        if (B) free(B);
+        return;
     }
 
-    // int with sample values for testing (you must use random for final project)
-    for (int i = 0; i < n; ++i) {
-        a[i] = (double)(i % 5 + 1); // 1.0, 2.0, 3.0, 4.0, 5.0, 1.0, ...
-        b[i] = (double)(i % 5 + 1);
+    // Initialize vectors
+    initialize_vectors(A, B, n);
+    printf("Vectors initialized with random values.\n\n");
+
+    // Variables for timing
+    const int RUNS = 20;
+    double total_time_c = 0.0;
+    double total_time_asm = 0.0;
+    double result_c = 0.0;
+    double result_asm = 0.0;
+
+    // Benchmark C version
+    printf("Running C kernel (20 iterations)...\n");
+    for (int i = 0; i < RUNS; i++) {
+        double start = get_time();
+        result_c = dotproduct_c(A, B, n);
+        double end = get_time();
+        total_time_c += (end - start);
     }
+    double avg_time_c = total_time_c / RUNS;
+    printf("C Kernel Result: %.10f\n", result_c);
+    printf("C Kernel Average Time: %.6f seconds\n\n", avg_time_c);
 
-    // EXECUTE C INTRINSIC KERNEL 
-    double result_c = c_dot_simd(n, a, b);
+    // Benchmark x86-64 Assembly version
+    printf("Running x86-64 Assembly kernel (20 iterations)...\n");
+    for (int i = 0; i < RUNS; i++) {
+        double start = get_time();
+        result_asm = dotproduct_asm(A, B, n);
+        double end = get_time();
+        total_time_asm += (end - start);
+    }
+    double avg_time_asm = total_time_asm / RUNS;
+    printf("Assembly Kernel Result: %.10f\n", result_asm);
+    printf("Assembly Kernel Average Time: %.6f seconds\n\n", avg_time_asm);
 
-    // EXECUTE ASSEMBLY KERNEL (Windows x64)
-    double result_asm = _asm_dot(n, a, b);
-
-    printf("Vector Length (n): %d\n", n);
-    printf("C (Intrinsic) Result : %.10f\n", result_c);
-    printf("ASM (x64 Win) Result : %.10f\n", result_asm);
-
-    // FOOR CORRECTNESS CHECK
-    // Use a small tolerance for floating-point comparison
-    double tolerance = 1e-9;
-    if (fabs(result_c - result_asm) < tolerance) {
-        printf("\n Results MATCH (within tolerance %.1e). Correctness check passed.\n", tolerance);
+    // Correctness check
+    printf("Correctness Check:\n");
+    if (are_equal(result_c, result_asm)) {
+        printf("✓ PASS: C and Assembly results match!\n");
+        printf("  Difference: %.15e\n", fabs(result_c - result_asm));
     } else {
-        printf("\nResults DIFFER. Correctness check FAILED.\n");
+        printf("✗ FAIL: Results do not match!\n");
+        printf("  C Result:        %.10f\n", result_c);
+        printf("  Assembly Result: %.10f\n", result_asm);
+        printf("  Difference:      %.10f\n", fabs(result_c - result_asm));
     }
-    
-    free(a);
-    free(b);
+
+    // Performance comparison
+    printf("\nPerformance Comparison:\n");
+    double speedup = avg_time_c / avg_time_asm;
+    printf("C vs Assembly speedup: %.2fx\n", speedup);
+    if (speedup > 1.0) {
+        printf("Assembly is %.2f%% faster than C\n", (speedup - 1.0) * 100.0);
+    } else if (speedup < 1.0) {
+        printf("C is %.2f%% faster than Assembly\n", (1.0 / speedup - 1.0) * 100.0);
+    }
+
+    // Free memory
+    free(A);
+    free(B);
+}
+
+int main() {
+    printf("============================================================\n");
+    printf("DOT PRODUCT BENCHMARK: C vs x86-64 Assembly (SIMD)\n");
+    printf("============================================================\n");
+    printf("Using scalar SIMD registers (XMM) and SIMD instructions\n");
+    printf("Testing with 20 runs per configuration\n");
+
+    // Test different vector sizes
+    long long sizes[] = {
+        1LL << 20,  // 2^20
+        1LL << 24,  // 2^24
+        1LL << 28   // 2^28 
+    };
+
+    for (int i = 0; i < 3; i++) {
+        run_benchmark(sizes[i]);
+    }
+
+    printf("\n============================================================\n");
+    printf("Benchmark completed successfully!\n");
+    printf("============================================================\n");
+
     return 0;
 }
